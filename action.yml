@@ -1,0 +1,11 @@
+name: Red Team PR
+description: Claude red-teams the PR diff; only findings proven by a failing test are reported.
+
+runs:
+  using: composite
+  steps:
+    - name: Run red team
+      shell: bash
+      env:
+        PYTHONPATH: ${{ github.action_path }}
+      run: python3 -m redteam.cli
