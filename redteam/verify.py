@@ -1,13 +1,17 @@
+import io
 import os
 import re
-import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
 # Only these reach a proof test. Keys, tokens and runner command files (GITHUB_ENV etc.) never do.
-SAFE_ENV = ("PATH", "HOME", "LANG", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR")
+SAFE_ENV = ("PATH", "HOME", "LANG", "TEMP", "TMP", "TMPDIR",
+            # Windows system paths and CPU info (not secrets); without them Python crashes intermittently
+            "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "SYSTEMDRIVE", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+            "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE")
 TIMEOUT = 120
 
 
@@ -39,24 +43,36 @@ def run_proof(test_code, repo_dir="."):
         return r.returncode, (r.stdout + r.stderr)[-1500:]
 
 
-def verify(findings, repo_dir="."):
-    """Confirm a finding only if its proof test FAILS: pytest exit code 1 AND pytest reports a failure.
+def _failed(code, output):
+    # Exit code 1 alone isn't enough: sudo, env or a missing interpreter also exit 1.
+    return code == 1 and re.search(r"\b\d+ failed\b", output) is not None
 
-    Exit code 1 alone isn't enough: sudo, env or a missing interpreter also exit 1.
+
+def verify(findings, head_dir=".", base_dir=None):
+    """Differential check: a finding is confirmed only if its proof FAILS on the PR and does NOT fail on the base.
+
+    Failing on both means a pre-existing bug or a test that proves nothing (e.g. `assert False`),
+    so it isn't blamed on the PR.
     """
-    with tempfile.TemporaryDirectory() as d:
-        if os.environ.get("REDTEAM_PROOF_USER"):
-            repo_dir = _readonly_copy(repo_dir, d)
-        for f in findings:
-            code, output = run_proof(f["proof_test"], repo_dir)
-            f["confirmed"] = code == 1 and re.search(r"\b\d+ failed\b", output) is not None
-            f["proof_output"] = output
+    for f in findings:
+        code, output = run_proof(f["proof_test"], head_dir)
+        f["head_failed"] = _failed(code, output)
+        f["base_failed"] = bool(f["head_failed"] and base_dir and _failed(*run_proof(f["proof_test"], base_dir)))
+        f["proof_output"] = output
+        if not f["head_failed"]:
+            f["verdict"] = "rejected"
+        else:
+            f["verdict"] = "pre-existing" if f["base_failed"] else "confirmed"
+        f["confirmed"] = f["verdict"] == "confirmed"
     return findings
 
 
-def _readonly_copy(repo_dir, into):
-    """Copy the repo without .git (checkout keeps the GitHub token in .git/config) where the proof user can read it."""
-    # ponytail: full copy per run; fine for normal repos, add an ignore list if huge repos get slow
-    dest = shutil.copytree(repo_dir, Path(into) / "repo", ignore=shutil.ignore_patterns(".git"))
+def snapshot(ref, into):
+    """Export a commit's files with git archive: no .git (checkout keeps the token there), readable by the proof user."""
+    dest = Path(into) / ref.replace("/", "_")
+    dest.mkdir(parents=True)
+    tar = subprocess.run(["git", "archive", "--format=tar", ref], capture_output=True, check=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(tar)) as t:
+        t.extractall(dest, filter="data")
     os.chmod(into, 0o755)
     return dest

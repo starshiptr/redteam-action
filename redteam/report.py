@@ -1,10 +1,13 @@
+import html
 import json
+import re
 import urllib.request
 
 MARKER = "<!-- redteam-action -->"
 SEVERITY = ["low", "medium", "high", "critical"]
 # $ per million tokens (input, output); thinking tokens bill as output
 PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10)}
+ZW = "\u200b"  # zero-width space: breaks a pattern without changing what the reader sees
 
 
 def cost(model, usage):
@@ -14,31 +17,43 @@ def cost(model, usage):
 
 
 def _safe(text):
-    return str(text).replace("@", "@​")  # model text must never ping people
+    """Model text is untrusted: no HTML, no Markdown links/images/formatting, no @mentions, no autolinks."""
+    text = html.escape(str(text))
+    text = re.sub(r"([\\`*_\[\]()!#|~>])", r"\\\1", text)
+    return text.replace("@", "@" + ZW).replace("://", ":" + ZW + "//").replace("www.", "www" + ZW + ".")
+
+
+def _fence(code):
+    """A code fence longer than any backtick run inside the code, so the proof can't close it early."""
+    longest = max((len(m) for m in re.findall(r"`+", code)), default=0)
+    return "`" * max(3, longest + 1)
 
 
 def _finding(f):
+    tag = f["category"] + (f" · {_safe(f['cwe'])}" if f.get("cwe") else "")
+    fence = _fence(f["proof_test"])
     return (
-        f"#### `{f['severity']}` {_safe(f['title'])}\n"
-        f"`{_safe(f['file'])}:{f['line']}`: {_safe(f['impact'])}\n\n"
+        f"#### {f['severity']} ({tag}): {_safe(f['title'])}\n"
+        f"{_safe(f['file'])}, line {int(f['line'])}: {_safe(f['impact'])}\n\n"
         f"**Fix direction:** {_safe(f['fix_direction'])}\n\n"
-        f"<details><summary>Proof test</summary>\n\n````python\n{f['proof_test']}\n````\n</details>\n"
+        f"<details><summary>Proof test (fails on this PR, not before it)</summary>\n\n"
+        f"{fence}python\n{f['proof_test']}\n{fence}\n</details>\n"
     )
 
 
 def render(state):
     if state["status"] == "skipped":
         return f"{MARKER}\n### Red team: skipped\n{_safe(state['reason'])}\n"
-    confirmed = [f for f in state["findings"] if f.get("confirmed")]
-    rejected = [f for f in state["findings"] if not f.get("confirmed")]
-    lines = [MARKER, f"### Red team: {len(confirmed)} confirmed finding(s)"]
-    if not confirmed:
-        lines.append("No bug was proven by a failing test.")
-    lines += [_finding(f) for f in confirmed]
-    if rejected:
-        lines.append(f"<details><summary>{len(rejected)} unconfirmed (proof test did not fail)</summary>\n")
-        lines += [f"- `{f['severity']}` {_safe(f['title'])}" for f in rejected]
-        lines.append("</details>")
+    by = {v: [f for f in state["findings"] if f.get("verdict") == v] for v in ("confirmed", "pre-existing", "rejected")}
+    lines = [MARKER, f"### Red team: {len(by['confirmed'])} confirmed finding(s)"]
+    if not by["confirmed"]:
+        lines.append("No bug introduced by this PR was proven by a failing test.")
+    lines += [_finding(f) for f in by["confirmed"]]
+    for verdict, why in (("pre-existing", "proof also fails before this PR"), ("rejected", "proof test did not fail")):
+        if by[verdict]:
+            lines.append(f"<details><summary>{len(by[verdict])} {verdict} ({why})</summary>\n")
+            lines += [f"- {f['severity']}: {_safe(f['title'])}" for f in by[verdict]]
+            lines.append("</details>")
     u = state["usage"]
     lines.append(
         f"\n<sub>{state['model']} · {u['input_tokens']:,} in / {u['output_tokens']:,} out · "

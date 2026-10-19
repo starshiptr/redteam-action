@@ -24,7 +24,12 @@ runs:
   steps:
     - name: Install red team dependencies
       shell: bash
-      run: python3 -m pip install --quiet anthropic==1.15.0 pytest==9.1.1
+      run: |
+        # anthropic lives in its own venv so it can't clash with the reviewed repo's packages
+        python3 -m venv "$RUNNER_TEMP/redteam-venv"
+        "$RUNNER_TEMP/redteam-venv/bin/pip" install --quiet anthropic==1.15.0
+        # proofs run in the repo's own environment; add pytest only if the repo doesn't have it
+        python3 -c "import pytest" 2>/dev/null || python3 -m pip install --quiet pytest==9.1.1
 
     - name: Attack (Claude call; only step with the API key)
       shell: bash
@@ -34,7 +39,7 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         INPUT_MODEL: ${{ inputs.model }}
         INPUT_MAX_CHARS: ${{ inputs.max-chars }}
-      run: python3 -m redteam.cli attack
+      run: '"$RUNNER_TEMP/redteam-venv/bin/python" -m redteam.cli attack'
 
     - name: Verify (no key, no network, proofs run as an unprivileged user)
       shell: bash

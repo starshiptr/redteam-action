@@ -19,7 +19,7 @@ def save(state):
 
 def attack_step():
     from redteam.attack import MODEL, attack, build_prompt
-    from redteam.collect import collect
+    from redteam.collect import _git, collect
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return save({"status": "skipped", "reason": "No ANTHROPIC_API_KEY (fork PRs get no secrets).", "post": False})
@@ -34,15 +34,22 @@ def attack_step():
     model = os.environ.get("INPUT_MODEL") or MODEL
     findings, usage = attack(bundle, model=model)
     usage = {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens}
-    return save({"status": "done", "model": model, "findings": findings, "usage": usage, "post": True})
+    merge_base = _git("merge-base", f"origin/{base}", "HEAD").strip()  # the code the PR started from
+    return save({"status": "done", "model": model, "base": merge_base, "findings": findings, "usage": usage,
+                 "post": True})
 
 
 def verify_step():
-    from redteam.verify import verify
+    import tempfile
+
+    from redteam.verify import snapshot, verify
 
     state = load()
     if state["status"] == "done":
-        verify(state["findings"])
+        with tempfile.TemporaryDirectory() as d:
+            head = snapshot("HEAD", d)
+            base = snapshot(state["base"], d) if state.get("base") else None
+            verify(state["findings"], head, base)
     return save(state)  # written after every proof ran, so a proof can't forge the result
 
 
