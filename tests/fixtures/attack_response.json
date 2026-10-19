@@ -1,0 +1,15 @@
+{
+  "id": "msg_fixture",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"findings\": [{\"severity\": \"high\", \"file\": \"redteam/cli.py\", \"line\": 6, \"title\": \"main() returns 1, so every run fails CI\", \"impact\": \"sys.exit(1) marks every red-team run as failed, even with no findings.\", \"proof_test\": \"from redteam.cli import main\\n\\ndef test_main_succeeds():\\n    assert main() == 0\\n\", \"fix_direction\": \"Return 0 when the run completes.\"}]}"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 1200, "output_tokens": 300}
+}
