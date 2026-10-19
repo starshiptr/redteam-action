@@ -36,6 +36,14 @@ def test_model_text_cannot_inject_html_links_or_images():
     assert "security · CWE-79" in body
 
 
+def test_plain_text_reads_cleanly_and_cannot_start_a_new_block():
+    f = finding("high", "confirmed", title="an unvalidated month like '2024-1'",
+                impact="first line\n# FAKE HEADING\n- [ ] fake task")
+    body = report.render(STATE | {"findings": [f]})
+    assert "month like '2024-1'" in body  # apostrophes render as-is (was &#x27;)
+    assert "\n# FAKE" not in body and "\n- \\[ \\]" not in body  # newlines in model text are flattened
+
+
 def test_proof_with_backticks_cannot_break_out_of_its_code_block():
     proof = "x = '````'\n"
     body = report.render(STATE | {"findings": [finding("high", "confirmed", proof_test=proof)]})
