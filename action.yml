@@ -1,11 +1,58 @@
 name: Red Team PR
 description: Claude red-teams the PR diff; only findings proven by a failing test are reported.
 
+inputs:
+  anthropic-api-key:
+    description: Anthropic API key (pass a secret). Empty → the run is skipped.
+    required: false
+    default: ""
+  model:
+    description: Claude model ID
+    default: claude-opus-5-5
+  fail-on:
+    description: Lowest confirmed severity that fails the check (low, medium, high, critical, none)
+    default: high
+  max-chars:
+    description: Skip PRs whose prompt is larger than this many characters
+    default: "200000"
+  github-token:
+    description: Token used to post the PR comment
+    default: ${{ github.token }}
+
 runs:
   using: composite
   steps:
-    - name: Run red team
+    - name: Install red team dependencies
+      shell: bash
+      run: |
+        # anthropic lives in its own venv so it can't clash with the reviewed repo's packages
+        python3 -m venv "$RUNNER_TEMP/redteam-venv"
+        "$RUNNER_TEMP/redteam-venv/bin/pip" install --quiet anthropic==1.15.0
+        # proofs run in the repo's own environment; add pytest only if the repo doesn't have it
+        python3 -c "import pytest" 2>/dev/null || python3 -m pip install --quiet pytest==9.1.1
+
+    - name: Attack (Claude call; only step with the API key)
       shell: bash
       env:
         PYTHONPATH: ${{ github.action_path }}
-      run: python3 -m redteam.cli
+        REDTEAM_STATE: ${{ runner.temp }}/redteam-state.json
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_MAX_CHARS: ${{ inputs.max-chars }}
+      run: '"$RUNNER_TEMP/redteam-venv/bin/python" -m redteam.cli attack'
+
+    - name: Verify (no key, no network, proofs run as an unprivileged user)
+      shell: bash
+      env:
+        PYTHONPATH: ${{ github.action_path }}
+        REDTEAM_STATE: ${{ runner.temp }}/redteam-state.json
+      run: bash "${{ github.action_path }}/redteam/verify-sandboxed.sh"
+
+    - name: Report (PR comment + fail-on gate)
+      shell: bash
+      env:
+        PYTHONPATH: ${{ github.action_path }}
+        REDTEAM_STATE: ${{ runner.temp }}/redteam-state.json
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+      run: python3 -m redteam.cli report
