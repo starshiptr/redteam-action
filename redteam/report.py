@@ -18,8 +18,9 @@ def cost(model, usage):
 
 def _safe(text):
     """Model text is untrusted: no HTML, no Markdown links/images/formatting, no @mentions, no autolinks."""
-    text = html.escape(str(text))
-    text = re.sub(r"([\\`*_\[\]()!#|~>])", r"\\\1", text)
+    text = " ".join(str(text).split())  # one line: no new Markdown block (heading, list) can start inside it
+    text = html.escape(text, quote=False)  # quotes are harmless outside attributes; escaping them showed &#x27;
+    text = re.sub(r"([\\`*_\[\]()!|~])", r"\\\1", text)
     return text.replace("@", "@" + ZW).replace("://", ":" + ZW + "//").replace("www.", "www" + ZW + ".")
 
 

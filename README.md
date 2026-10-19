@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt   # proof tests import your code
-      - uses: starshiptr/redteam-action@<sha>
+      - uses: starshiptr/redteam-action@<sha>   # the v1.0 commit SHA; pin by SHA, not by tag
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           fail-on: high     # low | medium | high | critical | none
@@ -53,6 +53,28 @@ Each step gets only what it needs:
 Findings carry a category (`security` or `bug`) and a CWE ID where one applies. At most 10 findings per run.
 
 CI runs escape-attempt proofs through the real sandbox on every PR: network access, writing runner files, reading secrets, reading `.git/config`. The sandbox holds only if every escape fails (see `tests/sandbox_probe.py`).
+
+## Results (v1.0, 2026-10-19)
+
+Run on [redteam-eval](https://github.com/starshiptr/redteam-eval). That repo is a small Streamlit + SQLite dashboard after a correctness pass, with 8 open PRs, each reintroducing one real bug that the pass fixed. An oracle test per bug confirmed the setup: `main` passes all 8, and each PR fails only its own.
+
+| PR | Planted bug | Verdict | Cost |
+|---|---|---|---|
+| [1](https://github.com/starshiptr/redteam-eval/pull/1) | Month filter matches by prefix | confirmed (low) | $0.032 |
+| [2](https://github.com/starshiptr/redteam-eval/pull/2) | Month 00 / 13 accepted | confirmed (medium, CWE-20) | $0.015 |
+| [3](https://github.com/starshiptr/redteam-eval/pull/3) | Negative amounts saved | confirmed (medium) | $0.015 |
+| [4](https://github.com/starshiptr/redteam-eval/pull/4) | Blank amounts pass validation | confirmed (high), plus a second real crash the change introduced | $0.025 |
+| [5](https://github.com/starshiptr/redteam-eval/pull/5) | Save wipes and reinserts, so ids change | confirmed (high) | $0.038 |
+| [6](https://github.com/starshiptr/redteam-eval/pull/6) | Export overwrites the previous month | confirmed (high) | $0.014 |
+| [7](https://github.com/starshiptr/redteam-eval/pull/7) | Export no longer creates its folder | confirmed (medium) | $0.015 |
+| [8](https://github.com/starshiptr/redteam-eval/pull/8) | Date check only looks at the shape | confirmed (medium, CWE-20) | $0.016 |
+
+**8/8 planted bugs confirmed, 0 false confirms, ~$0.17 in total (~$0.02 per PR) on `claude-opus-5-5`.** One unproven guess was correctly rejected.
+
+**Read this as "the mechanism works", not as a benchmark:**
+- The set is small and easy: one file, logic-level bugs, short diffs, and docstrings that state the intended behaviour.
+- The 8 bugs were originally found by a Claude-based agent, so the set leans toward what Claude finds. Human-found bugs would be a harder test.
+- One run per PR. The model isn't deterministic.
 
 ## Limits
 
