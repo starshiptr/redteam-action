@@ -22,3 +22,21 @@ jobs:
       - run: python -m pytest -v
       - name: Run the action on itself
         uses: ./
+
+  sandbox:
+    runs-on: ubuntu-latest
+    env:
+      REDTEAM_STATE: ${{ github.workspace }}/../probe-state.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - run: pip install pytest==9.1.1
+      - run: python tests/sandbox_probe.py setup
+      - name: Run escape-attempt proofs through the real sandbox
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          GITHUB_TOKEN: dummy-must-not-leak
+        run: bash redteam/verify-sandboxed.sh
+      - run: python tests/sandbox_probe.py check
