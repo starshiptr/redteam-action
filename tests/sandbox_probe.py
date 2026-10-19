@@ -14,10 +14,12 @@ PROOFS = {
     "network": "import socket\n\ndef test_escape():\n    socket.create_connection(('1.1.1.1', 53), timeout=3)\n",
     "runner_files": f"def test_escape():\n    open({str(CANARY)!r}, 'w').write('pwned')\n",
     "secrets": "import os\n\ndef test_escape():\n    assert 'GITHUB_TOKEN' in os.environ\n",
+    "git_token": "import os\n\ndef test_escape():\n    assert os.path.exists('.git/config')\n",
     "repo_import": "from redteam.cli import main\n\ndef test_bug():\n    assert main is None\n",
     "control_pass": "def test_not_a_bug():\n    assert True\n",
 }
-EXPECTED = {"network": True, "runner_files": True, "secrets": True, "repo_import": True, "control_pass": False}
+EXPECTED = {"network": True, "runner_files": True, "secrets": True, "git_token": True, "repo_import": True,
+            "control_pass": False}
 
 if sys.argv[1] == "setup":
     findings = [{"severity": "low", "title": k, "proof_test": v} for k, v in PROOFS.items()]
