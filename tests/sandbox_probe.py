@@ -23,8 +23,10 @@ if sys.argv[1] == "setup":
     findings = [{"severity": "low", "title": k, "proof_test": v} for k, v in PROOFS.items()]
     STATE.write_text(json.dumps({"status": "done", "findings": findings}))
 else:
-    results = {f["title"]: f["confirmed"] for f in json.loads(STATE.read_text())["findings"]}
-    print(json.dumps(results, indent=2))
+    findings = json.loads(STATE.read_text())["findings"]
+    for f in findings:
+        print(f"--- {f['title']}: confirmed={f['confirmed']}\n{f['proof_output'][-600:]}")
+    results = {f["title"]: f["confirmed"] for f in findings}
     assert results == EXPECTED, f"sandbox probe mismatch: {results}"
     assert not CANARY.exists(), "a proof wrote to the runner's temp dir"
     print("sandbox holds")

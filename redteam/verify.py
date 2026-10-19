@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -34,13 +35,16 @@ def run_proof(test_code, repo_dir="."):
             )
         except subprocess.TimeoutExpired:
             return None, f"timed out after {TIMEOUT}s"
-        return r.returncode, r.stdout[-1500:]
+        return r.returncode, (r.stdout + r.stderr)[-1500:]
 
 
 def verify(findings, repo_dir="."):
-    """Confirm a finding only if its proof test FAILS (pytest exit code 1)."""
+    """Confirm a finding only if its proof test FAILS: pytest exit code 1 AND pytest reports a failure.
+
+    Exit code 1 alone isn't enough: sudo, env or a missing interpreter also exit 1.
+    """
     for f in findings:
         code, output = run_proof(f["proof_test"], repo_dir)
-        f["confirmed"] = code == 1
+        f["confirmed"] = code == 1 and re.search(r"\b\d+ failed\b", output) is not None
         f["proof_output"] = output
     return findings

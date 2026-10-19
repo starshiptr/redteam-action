@@ -20,6 +20,13 @@ def test_broken_proof_is_rejected():
     assert f["confirmed"] is False
 
 
+def test_exit_code_1_without_a_pytest_failure_is_rejected(monkeypatch):
+    # e.g. sudo or env failing before pytest runs also exits 1
+    monkeypatch.setattr("redteam.verify.run_proof", lambda code, repo: (1, "sudo: unknown user"))
+    [f] = verify([finding("def test_bug():\n    assert True\n")])
+    assert f["confirmed"] is False
+
+
 def test_proof_can_import_the_repo_under_test():
     [f] = verify([finding("from redteam.cli import main\n\ndef test_bug():\n    assert main is None\n")])
     assert f["confirmed"] is True  # failed on the assert, so the import worked
